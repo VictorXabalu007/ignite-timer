@@ -1,13 +1,18 @@
-import { createContext, ReactNode, useState } from 'react'
-
-interface ICicle {
-  id: string
-  task: string
-  minutsAmount: number
-  startDate: Date
-  interruptedDate?: Date
-  finishedDate?: Date
-}
+import {
+  createContext,
+  ReactNode,
+  useEffect,
+  useReducer,
+  useState,
+} from 'react'
+import { cyclesReducer, ICicle } from '../reducers/cycles/reducer'
+import {
+  ActionTypes,
+  addNewCicleAction,
+  interruptCurrentCycleAction,
+  markCurrentCicleAsFinishedAction,
+} from '../reducers/cycles/actions'
+import { differenceInSeconds } from 'date-fns'
 
 interface ICreateNewCycle {
   task: string
@@ -20,7 +25,6 @@ interface CyclesContextType {
   activeCicleId: string
   amountSecondPassed: number
   markCurrentCycleAsFinished: () => void
-  setInitialActiveCicleId: () => void
   setSecondPassed: (secons: number) => void
   setSecondsDiference: (secons: number) => void
   createNewCicle: (data: ICreateNewCycle) => void
@@ -36,29 +40,59 @@ interface CyclesContextProviderProps {
 export function CyclesContextProvider({
   children,
 }: CyclesContextProviderProps) {
-  const [cicles, setCicles] = useState<ICicle[]>([])
-  const [activeCicleId, setActiveCicleId] = useState<string>('')
-  const [amountSecondPassed, setAmountSecondPassed] = useState(0)
+  const [ciclesState, dispath] = useReducer(
+    cyclesReducer,
+    {
+      cicles: [],
+      activeCicleId: '',
+    },
+    (initialState) => {
+      const storedStateAsJson = localStorage.getItem(
+        '@ignite-timer:cicles-state-1.0.0',
+      )
 
+      if (storedStateAsJson) {
+        return JSON.parse(storedStateAsJson)
+      }
+
+      return initialState
+    },
+  )
+
+  useEffect(() => {
+    const stateJSON = JSON.stringify(ciclesState)
+
+    localStorage.setItem('@ignite-timer:cicles-state-1.0.0', stateJSON)
+  }, [ciclesState])
+
+  const { cicles, activeCicleId } = ciclesState
   const activeCycle = cicles.find((cicle) => cicle.id === activeCicleId)
 
+  const [amountSecondPassed, setAmountSecondPassed] = useState(() => {
+    if (activeCycle) {
+      return differenceInSeconds(new Date(), new Date(activeCycle.startDate))
+    }
+
+    return 0
+  })
+
   function markCurrentCycleAsFinished() {
-    setCicles((prevState) =>
-      prevState.map((cicle) => {
-        if (cicle.id === activeCicleId) {
-          return {
-            ...cicle,
-            finishedDate: new Date(),
-          }
-        } else {
-          return cicle
-        }
-      }),
-    )
+    dispath(markCurrentCicleAsFinishedAction())
   }
 
-  function setInitialActiveCicleId() {
-    setActiveCicleId('')
+  function createNewCicle(data: ICreateNewCycle) {
+    const newCicle: ICicle = {
+      id: crypto.randomUUID(),
+      task: data.task,
+      minutsAmount: data.minutsAmount,
+      startDate: new Date(),
+    }
+    dispath(addNewCicleAction(newCicle))
+    setAmountSecondPassed(0)
+  }
+
+  function interruptCurrentCycle() {
+    dispath(interruptCurrentCycleAction())
   }
 
   function setSecondPassed(seconds: number) {
@@ -69,38 +103,6 @@ export function CyclesContextProvider({
     setAmountSecondPassed(seconds)
   }
 
-  function createNewCicle(data: ICreateNewCycle) {
-    const newCicle: ICicle = {
-      id: crypto.randomUUID(),
-      task: data.task,
-      minutsAmount: data.minutsAmount,
-      startDate: new Date(),
-    }
-
-    setCicles((prevState) => {
-      return [...prevState, newCicle]
-    })
-    setActiveCicleId(newCicle.id)
-    setAmountSecondPassed(0)
-  }
-
-  function interruptCurrentCycle() {
-    setCicles((prevState) =>
-      prevState.map((cicle) => {
-        if (cicle.id === activeCicleId) {
-          return {
-            ...cicle,
-            interruptedDate: new Date(),
-          }
-        } else {
-          return cicle
-        }
-      }),
-    )
-
-    setActiveCicleId('')
-  }
-
   return (
     <CyclesContext.Provider
       value={{
@@ -109,7 +111,6 @@ export function CyclesContextProvider({
         activeCicleId,
         amountSecondPassed,
         markCurrentCycleAsFinished,
-        setInitialActiveCicleId,
         setSecondPassed,
         setSecondsDiference,
         createNewCicle,
